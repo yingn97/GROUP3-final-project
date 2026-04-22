@@ -16,6 +16,7 @@ sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, 'src'))
 
 from config import OUTPUT_DIR, DAILY_PNL_MATRIX_PATH, EXPERIMENT_PROTOCOL, logger
+from performance import calculate_detailed_stats
 
 PNL_MATRIX_PATH = DAILY_PNL_MATRIX_PATH
 FINAL_REPORT_PATH = os.path.join(OUTPUT_DIR, "IS_OOS_COMPARISON_REPORT.png")
@@ -24,15 +25,6 @@ COLOR_DYNAMIC = '#E63946'
 COLOR_FIXED = '#457B9D'    
 COLOR_DRAWDOWN = '#F1A7B4'
 
-def calculate_stats(rets):
-    if len(rets) == 0: return 0, 0, 0, 0
-    ann_ret = rets.mean() * 252
-    ann_vol = rets.std() * np.sqrt(252)
-    sharpe = ann_ret / ann_vol if ann_vol != 0 else 0
-    eq = (1 + rets).cumprod()
-    max_dd = (eq / eq.cummax() - 1).min()
-    total_ret = eq.iloc[-1] - 1
-    return total_ret, ann_ret, sharpe, max_dd
 
 def main():
     logger.info("Loading PnL matrix...")
@@ -89,8 +81,14 @@ def main():
     
     stats_data = []
     for col in df_oos_comparison.columns:
-        tr, ar, sh, dd = calculate_stats(df_oos_comparison[col])
-        stats_data.append([col, f"{tr:.1%}", f"{ar:.1%}", f"{sh:.2f}", f"{dd:.1%}"])
+        stats = calculate_detailed_stats(df_oos_comparison[col])
+        stats_data.append([
+            col, 
+            f"{stats['Total Return']:.1%}", 
+            f"{stats['Annualized Return']:.1%}", 
+            f"{stats['Sharpe Ratio']:.2f}", 
+            f"{stats['Max Drawdown']:.1%}"
+        ])
         
     table = ax_main.table(cellText=stats_data, 
                          colLabels=['Strategy', 'Total Return', 'Ann. Return', 'Sharpe', 'Max Drawdown'], 

@@ -15,6 +15,7 @@ sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, 'src'))
 
 from config import OUTPUT_DIR, DAILY_PNL_MATRIX_PATH, EXPERIMENT_PROTOCOL, logger
+from performance import calculate_detailed_stats
 
 PNL_MATRIX_PATH = DAILY_PNL_MATRIX_PATH
 PLOT_PATH = os.path.join(OUTPUT_DIR, "switching_window_comparison.png")
@@ -32,14 +33,6 @@ def get_dynamic_rets(df_pnl, window, fallback_t):
     rets = pd.Series([df_pnl.loc[date, col] for date, col in best_t.items()], index=df_pnl.index)
     return rets, best_t
 
-def calculate_stats(rets):
-    if len(rets) == 0: return 0, 0, 0
-    ann_ret = rets.mean() * 252
-    ann_vol = rets.std() * np.sqrt(252)
-    sharpe = ann_ret / ann_vol if ann_vol != 0 else 0
-    eq = (1 + rets).cumprod()
-    max_dd = (eq / eq.cummax() - 1).min()
-    return ann_ret, sharpe, max_dd
 
 def main():
     logger.info("Loading PnL matrix...")
@@ -99,8 +92,13 @@ def main():
     print(f"\nOOS Performance Stats ({oos_start[:4]}-{oos_end[:4]}):")
     stats = []
     for col in df_oos.columns:
-        ann_ret, sharpe, max_dd = calculate_stats(df_oos[col])
-        stats.append({'Window': col, 'AnnRet': f"{ann_ret:.2%}", 'Sharpe': f"{sharpe:.2f}", 'MaxDD': f"{max_dd:.2%}"})
+        res = calculate_detailed_stats(df_oos[col])
+        stats.append({
+            'Window': col, 
+            'AnnRet': f"{res['Annualized Return']:.2%}", 
+            'Sharpe': f"{res['Sharpe Ratio']:.2f}", 
+            'MaxDD': f"{res['Max Drawdown']:.2%}"
+        })
     print(pd.DataFrame(stats))
 
 if __name__ == "__main__":

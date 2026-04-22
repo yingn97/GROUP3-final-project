@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-from plotly.subplots import make_subplots
 import numpy as np
 import os
 import sys
@@ -16,26 +15,44 @@ from config import (
     DAILY_PNL_MATRIX_PATH, SIGNAL_MATRIX_PATH, IF_DAILY_PRICE_PATH
 )
 from performance import calculate_detailed_stats, adjust_pnl_for_commission
-from database import BacktestDB
+from i18n import tr
 
-# Base commission from config
-ORIGINAL_COMMISSION = STRATEGY_PARAMS.get('commission_rate', 0.0002)
-
-# --- UI Styling ---
+# --- UI Styling & Config ---
 st.set_page_config(
-    page_title="CTA Alpha Terminal v2.0",
+    page_title=tr('title'),
     page_icon="🤖",
     layout="wide",
 )
 
-st.markdown("""
+# Colors & Style System
+PRIMARY_COLOR = '#4f46e5'
+POSITIVE_COLOR = '#10b981'
+NEGATIVE_COLOR = '#ef4444'
+NEUTRAL_COLOR = '#64748b'
+CARD_BG = '#ffffff'
+
+st.markdown(f"""
     <style>
-    .stApp { background-color: #f8fafc; font-family: 'Inter', system-ui, sans-serif; }
-    [data-testid="stSidebar"] { background-color: #ffffff !important; border-right: 1px solid #e2e8f0; }
-    .metric-card { background-color: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; }
-    .stTabs [data-baseweb="tab-list"] { gap: 24px; padding: 0 20px; }
+    .stApp {{ background-color: #f8fafc; font-family: 'Inter', system-ui, sans-serif; font-size: 0.95rem; font-weight: 400; }}
+    h1, h2, h3 {{ font-weight: 700 !important; color: #1e293b; }}
+    [data-testid="stSidebar"] {{ background-color: #ffffff !important; border-right: 1px solid #e2e8f0; }}
+    .metric-card {{ background-color: {CARD_BG}; padding: 18px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 12px; }}
+    .stTabs [data-baseweb="tab-list"] {{ gap: 20px; padding: 0 10px; border-bottom: 1px solid #e2e8f0; }}
+    .stTabs [data-baseweb="tab-list"] button {{ font-size: 1.0rem; font-weight: 600; padding: 12px 0; }}
+    div[data-testid="stMetricValue"] {{ font-size: 1.8rem; font-weight: 800; color: {PRIMARY_COLOR}; }}
+    .stTable {{ font-size: 0.9rem; }}
+    /* Compact scrollbar */
+    ::-webkit-scrollbar {{ width: 8px; height: 8px; }}
+    ::-webkit-scrollbar-thumb {{ background: #cbd5e1; border-radius: 4px; }}
     </style>
 """, unsafe_allow_html=True)
+
+# --- Top Header with Language Switch ---
+h_col1, h_col2 = st.columns([10, 1.5])
+with h_col1:
+    st.title(tr('title'))
+with h_col2:
+    st.session_state.lang = st.selectbox("", ['English', '中文'], index=0 if st.session_state.get('lang', 'English') == 'English' else 1, label_visibility="collapsed")
 
 # --- Data Loading ---
 @st.cache_data
@@ -49,239 +66,259 @@ def load_data():
     df_price.index = pd.to_datetime(df_price.index)
     return df_pnl, df_sig, df_price
 
-# Calculations now imported from src/performance.py
-
 # --- Sidebar ---
 with st.sidebar:
-    st.title("⚙️ Parameters")
+    st.markdown(f"### {tr('sidebar_params')}")
     
     df_pnl, df_sig, df_price = load_data()
     
     if df_pnl is not None:
-        # Default filters
-        start_d, end_d = df_pnl.index.min(), df_pnl.index.max()
-        best_t = 25 # Global fallback
-        
-        # Constrained date selection
+        # Date range synchronized slider + input
         min_date = datetime.date(2015, 1, 1)
         max_date = datetime.date(2024, 12, 31)
-        date_range = st.date_input(
-            "Training/Optimization Range", 
-            [datetime.date(2020, 1, 1), datetime.date(2024, 12, 31)], 
-            min_value=min_date, 
-            max_value=max_date
-        )
+
+        # Initialize session state keys if not present
+        if 'total_slider' not in st.session_state:
+            st.session_state.total_slider = (datetime.date(2016, 1, 1), datetime.date(2024, 12, 31))
+        if 'split_date' not in st.session_state:
+            st.session_state.split_date = datetime.date(2020, 1, 1)
+
+        st.slider(tr('date_range'), min_value=min_date, max_value=max_date, key='total_slider')
         
-        # Fixed Slider: added explicit step for fine-grained control
-        comm_input = st.slider(
-            "Commission Rate (e.g. 0.0002 = 万二)", 
-            min_value=0.0, 
-            max_value=0.0010, 
-            value=0.0002, 
-            step=0.0001, 
-            format="%.4f"
-        )
+        start_a = st.session_state.total_slider[0]
+        end_c = st.session_state.total_slider[1]
+
+        # Split point selection
+        st.slider(tr('split_date'), min_value=start_a, max_value=end_c, key='split_date')
+        split_b = st.session_state.split_date
+
+        start_d, split_d, end_d = pd.to_datetime(start_a), pd.to_datetime(split_b), pd.to_datetime(end_c)
+        
+        comm_input = st.slider(tr('comm_rate'), 0.0, 0.0010, 0.0002, 0.0001, format="%.4f")
         
         st.markdown("---")
-        mode = st.radio("Selection Mode", ["Manual Fixed T", "WFA Dynamic (1Y Window)"], index=0)
         
-        if mode == "Manual Fixed T":
-            selected_t = st.slider("Entry Timing (T)", 21, 60, 25)
+        # Calculate Best T1 for Training Period [A, B]
+        is_pnl = adjust_pnl_for_commission(df_pnl.loc[start_d:split_d], df_sig.loc[start_d:split_d], comm_input)
+        is_sharpe = (is_pnl.mean() * 252) / (is_pnl.std() * np.sqrt(252))
+        best_t1 = is_sharpe.idxmax() if not is_sharpe.isna().all() else 25
+
+        st.info(tr('training_info').format(start_a, split_b, best_t1))
+        st.success(tr('testing_info').format(split_b, end_c))
+
+        st.markdown("---")
+        mode = st.radio(tr('selection_mode'), [tr('manual_t'), tr('wfa_dynamic')], index=1)
+        
+        if mode == tr('manual_t'):
+            selected_t = st.slider(tr('entry_timing'), 21, 60, int(best_t1))
         else:
-            selected_t = 25 # Placeholder
-            
-        # Optimization Logic for Sidebar Info
-        if isinstance(date_range, list) or isinstance(date_range, tuple):
-            if len(date_range) == 2:
-                start_d, end_d = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
-                is_pnl = adjust_pnl_for_commission(df_pnl.loc[start_d:end_d], df_sig.loc[start_d:end_d], comm_input)
-                is_sharpe = (is_pnl.mean() * 252) / (is_pnl.std() * np.sqrt(252))
-                best_t = is_sharpe.idxmax()
-                st.success(f"Best T for selected range: **{best_t}**")
-                st.caption(f"Sharpe: {is_sharpe[best_t]:.2f}")
+            selected_t = 25 
+        
+        st.markdown("---")
+        st.caption(tr('baseline_note'))
 
 # --- Main Logic ---
 if df_pnl is not None:
-    # 1. Adjust PnL
+    @st.cache_data
+    def get_cached_stats(rets, signals):
+        return calculate_detailed_stats(rets, signals)
+
     df_pnl_adj = adjust_pnl_for_commission(df_pnl, df_sig, comm_input)
     
-    # 2. Extract Strategy Returns
-    if mode == "Manual Fixed T":
+    if mode == tr('manual_t'):
         strat_rets = df_pnl_adj.loc[start_d:end_d, selected_t]
         strat_signals = df_sig.loc[start_d:end_d, selected_t]
-        strat_name = f"Fixed T={selected_t}"
+        strat_name = tr('fixed_t_name').format(selected_t)
     else:
-        # Rolling WFA (252D window)
-        # Note: For speed, we use the adjusted PnL for rolling calc too
         roll_sharpe = df_pnl_adj.rolling(252).mean() / df_pnl_adj.rolling(252).std() * np.sqrt(252)
         df_selection = roll_sharpe.shift(1)
-        
-        # Robust selection: handle all-NaN rows (the warmup period) by falling back to the optimized T
-        selection = df_selection.apply(
-            lambda row: best_t if row.isna().all() else row.idxmax(), axis=1
-        )
-        
+        selection = df_selection.apply(lambda row: best_t1 if row.isna().all() else row.idxmax(), axis=1)
         sub_rets = df_pnl_adj.loc[start_d:end_d]
         sub_sig = df_sig.loc[start_d:end_d]
         sub_sel = selection.loc[start_d:end_d]
-        
         strat_rets = pd.Series([sub_rets.loc[d, int(t)] for d, t in sub_sel.items()], index=sub_rets.index)
         strat_signals = pd.Series([sub_sig.loc[d, int(t)] for d, t in sub_sel.items()], index=sub_sig.index)
-        strat_name = "WFA Dynamic"
+        strat_name = tr('wfa_name')
 
-    bench_rets = df_pnl_adj.loc[start_d:end_d, 25] # Hardcoded benchmark
+    # Benchmarks for Full period [A, C]
+    bench_rets_is = df_pnl_adj.loc[start_d:end_d, int(best_t1)]
     
-    # 3. Calculate Stats
-    stats = calculate_detailed_stats(strat_rets, strat_signals)
-    bench_stats = calculate_detailed_stats(bench_rets, df_sig.loc[start_d:end_d, 25])
+    # --- FOCUS: Out-of-Sample period [B, C] ---
+    # Slice rets and signals
+    strat_rets_oos = strat_rets.loc[split_d:end_d]
+    strat_signals_oos = strat_signals.loc[split_d:end_d]
+    bench_rets_is_oos = bench_rets_is.loc[split_d:end_d]
+
+    # Calculate stats for the OOS period
+    stats_oos = get_cached_stats(strat_rets_oos, strat_signals_oos)
+    bench_oos_is = get_cached_stats(bench_rets_is_oos, df_sig.loc[split_d:end_d, int(best_t1)])
     
-    # --- Page Content ---
-    t1, t2, t3 = st.tabs(["🚀 Dashboard", "📊 Deep Analysis & Tables", "📜 Trade Audit (SQLite)"])
+    # --- Tabs ---
+    t_over, t_perf, t_sig = st.tabs([tr('tab_overview'), tr('tab_analysis'), tr('tab_signals')])
     
-    with t1:
-        # KPIs
+    with t_over:
+        st.caption(tr('rel_baseline_help').format(best_t1))
+        # 1. KPIs (OOS Only)
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Total Return", f"{stats['Total Return']:.1%}", f"{stats['Total Return']-bench_stats['Total Return']:.1%}")
-        k2.metric("Sharpe Ratio", f"{stats['Annualized Return']/strat_rets.std()/np.sqrt(252):.2f}")
-        k3.metric("Max Drawdown", f"{stats['Max Drawdown']:.1%}", delta_color="inverse")
-        k4.metric("Win Rate", f"{stats['Win Rate']:.1%}")
+        def metric_card(col, label, val, delta, inv=False, prefix="", suffix=""):
+            d_color = "normal" if not inv else "inverse"
+            col.metric(label, f"{prefix}{val}{suffix}", delta, delta_color=d_color)
+
+        metric_card(k1, tr('total_return'), f"{stats_oos['Total Return']:.1%}", f"{stats_oos['Total Return']-bench_oos_is['Total Return']:.1%}")
+        metric_card(k2, tr('sharpe_ratio'), f"{stats_oos['Sharpe Ratio']:.2f}", f"{stats_oos['Sharpe Ratio']-bench_oos_is['Sharpe Ratio']:.2f}")
+        metric_card(k3, tr('max_drawdown'), f"{stats_oos['Max Drawdown']:.1%}", f"{stats_oos['Max Drawdown']-bench_oos_is['Max Drawdown']:.1%}", inv=True)
+        metric_card(k4, tr('win_rate'), f"{stats_oos['Win Rate']:.1%}", f"{stats_oos['Win Rate']-bench_oos_is['Win Rate']:.1%}")
         
         st.markdown("---")
 
-        # 1. Price & Trading Signals (Full Width)
-        st.subheader("1. Price & Trading Signals")
-        sub_price = df_price.loc[start_d:end_d]
-        fig_p = go.Figure()
-        fig_p.add_trace(go.Scatter(x=sub_price.index, y=sub_price['P_1500'], name="IF Daily Close", line=dict(color='#94a3b8', width=1)))
-        
-        # Add Signals
-        longs = sub_price[strat_signals == 1]
-        shorts = sub_price[strat_signals == -1]
-        fig_p.add_trace(go.Scatter(x=longs.index, y=longs['P_1500'], mode='markers', name='Long Entry', marker=dict(symbol='triangle-up', color='#10b981', size=10)))
-        fig_p.add_trace(go.Scatter(x=shorts.index, y=shorts['P_1500'], mode='markers', name='Short Entry', marker=dict(symbol='triangle-down', color='#ef4444', size=10)))
-        
-        # Force x-axis limit to 2024-12-31
-        fig_p.update_xaxes(range=[start_d, end_d])
-        fig_p.update_layout(height=400, margin=dict(l=0, r=0, t=10, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-        st.plotly_chart(fig_p, use_container_width=True)
-
-        # 2. Cumulative Returns (Full Width)
-        st.subheader("2. Cumulative Returns")
+        # 2. Key Charts (Vertical) - Rebased at Split Date B
+        st.subheader(tr('cum_returns'))
         fig_r = go.Figure()
-        fig_r.add_trace(go.Scatter(x=stats['Equity Curve'].index, y=stats['Equity Curve'], name=strat_name, line=dict(color='#4f46e5', width=2.5)))
-        fig_r.add_trace(go.Scatter(x=bench_stats['Equity Curve'].index, y=bench_stats['Equity Curve'], name="Baseline (T=25)", line=dict(color='#94a3b8', dash='dot')))
-        fig_r.update_layout(height=400, margin=dict(l=0, r=0, t=10, b=0))
+        
+        # Plot OOS Equity Curves (already re-indexed to start at 1.0 by calculate_detailed_stats when sliced)
+        fig_r.add_trace(go.Scatter(x=stats_oos['Equity Curve'].index, y=stats_oos['Equity Curve'], name=strat_name, line=dict(color=PRIMARY_COLOR, width=3)))
+        fig_r.add_trace(go.Scatter(x=bench_oos_is['Equity Curve'].index, y=bench_oos_is['Equity Curve'], name=tr('is_baseline_name').format(best_t1), line=dict(color='#f59e0b', dash='dash', width=2)))
+        
+        fig_r.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=0), legend=dict(orientation="h", y=1.1))
         st.plotly_chart(fig_r, use_container_width=True)
 
-        # 3. Max Drawdown (Full Width)
-        st.subheader("3. Max Drawdown (%)")
+        st.subheader(tr('max_dd_pct'))
         fig_d = go.Figure()
-        fig_d.add_trace(go.Scatter(x=stats['Drawdown Curve'].index, y=stats['Drawdown Curve']*100, fill='tozeroy', name='DD', line=dict(color='#ef4444')))
+        fig_d.add_trace(go.Scatter(x=stats_oos['Drawdown Curve'].index, y=stats_oos['Drawdown Curve']*100, fill='tozeroy', name='DD', line=dict(color=NEGATIVE_COLOR)))
         fig_d.update_layout(height=350, margin=dict(l=0, r=0, t=10, b=0))
         st.plotly_chart(fig_d, use_container_width=True)
-            
-        # 4. T Parameter Evolution (Full Period Dynamic Trace)
-        st.subheader("4. T Parameter Evolution (Adaptive Strategy Context)")
-        st.info("💡 该图表展示 Dynamic 方案在 **2016-2024 全周期** 内的最优参数路径，作为自适应机制的背景参考，不随上方区间缩放而改变。")
-        
-        # Calculate full period WFA trace for the reference chart
-        full_roll_sharpe = df_pnl_adj.rolling(252).mean() / df_pnl_adj.rolling(252).std() * np.sqrt(252)
-        df_full_sel = full_roll_sharpe.shift(1)
-        
-        # Robust selection to avoid 'all NA values' error during first 252 days
-        full_selection = df_full_sel.apply(
-            lambda row: 25 if row.isna().all() else row.idxmax(), axis=1
-        )
-        
-        # Slice from 2016 onwards as suggested for a cleaner start after warmup
-        full_selection = full_selection.loc['2016-01-01':]
-        
-        fig_t = px.line(x=full_selection.index, y=full_selection.values)
-        fig_t.update_traces(line=dict(color='#4f46e5', width=1.5))
-        fig_t.update_xaxes(
-            dtick="M12", # Every 12 months
-            tickformat="%Y",
-            tickmode="linear"
-        )
-        fig_t.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=0), yaxis_title="T Value", xaxis_title="Full Project Timeline (Yearly Ticks)")
-        st.plotly_chart(fig_t, use_container_width=True)
 
-    with t2:
-        st.subheader("📊 Comprehensive Metrics Table")
-        
-        # Helper to build a series of stats
-        def get_stat_col(r, s):
-            st = calculate_detailed_stats(r, s)
+    with t_perf:
+        st.subheader(tr('comp_metrics'))
+        def get_stat_series(st_val):
             return pd.Series({
-                "Total Return": f"{st['Total Return']:.2%}",
-                "Ann. Return": f"{st['Annualized Return']:.2%}",
-                "Max DD": f"{st['Max Drawdown']:.2%}",
-                "Ret/DD Ratio": f"{st['Calmar Ratio']:.2f}",
-                "Avg PnL/Trade": f"{st['Avg Trade PnL']:.4%}",
-                "Trade Count": str(st['Trade Count']),
-                "Win Rate": f"{st['Win Rate']:.2%}",
-                "P/L Ratio": f"{st['P/L Ratio']:.2f}",
-                "Long Ratio": f"{st['Long Ratio']:.2%}",
-                "Avg Daily Ret": f"{st['Avg Daily Return']:.4%}"
+                tr('total_return'): f"{st_val['Total Return']:.2%}",
+                tr('ann_return'): f"{st_val['Annualized Return']:.2%}",
+                tr('max_drawdown'): f"{st_val['Max Drawdown']:.2%}",
+                tr('calmar'): f"{st_val['Calmar Ratio']:.2f}",
+                tr('avg_pnl'): f"{st_val['Avg Trade PnL']:.4%}",
+                tr('trade_count'): str(st_val['Trade Count']),
+                tr('win_rate'): f"{st_val['Win Rate']:.2%}",
+                tr('pl_ratio'): f"{st_val['P/L Ratio']:.2f}",
+                tr('long_ratio'): f"{st_val['Long Ratio']:.2%}",
+                tr('avg_daily'): f"{st_val['Avg Daily Return']:.4%}"
             })
 
-        # Summary Table
         summary_df = pd.DataFrame({
-            f"Strategy ({strat_name})": get_stat_col(strat_rets, strat_signals),
-            "Benchmark (Fixed T=25)": get_stat_col(bench_rets, df_sig.loc[start_d:end_d, 25])
+            f"{tr('metrics')} ({strat_name})": get_stat_series(stats_oos),
+            tr('benchmark').format(best_t1): get_stat_series(bench_oos_is)
         })
         st.table(summary_df)
         
         st.markdown("---")
-        st.subheader("📅 Yearly Performance (Dynamic Strategy)")
-        years = strat_rets.index.year.unique()
-        yearly_data = {}
+        
+        # Yearly Analysis - Compare Dynamic (WFA) vs Static (IS Best)
+        st.subheader(f"{tr('yearly_perf')} ({strat_name})")
+        years = strat_rets.loc[start_d:end_d].index.year.unique()
+        
+        # Calculate WFA Dynamic rets (even if not currently selected) for comparison
+        roll_sharpe_all = df_pnl_adj.rolling(252).mean() / df_pnl_adj.rolling(252).std() * np.sqrt(252)
+        selection_all = roll_sharpe_all.shift(1).apply(lambda row: best_t1 if row.isna().all() else row.idxmax(), axis=1)
+        wfa_rets_full = pd.Series([df_pnl_adj.loc[d, int(t)] for d, t in selection_all.items()], index=df_pnl_adj.index)
+        
+        yearly_data = []
+        for yr in years:
+            # Dynamic (WFA)
+            yr_wfa = wfa_rets_full[wfa_rets_full.index.year == yr]
+            # Static (IS Best T1)
+            yr_static = bench_rets_is[bench_rets_is.index.year == yr]
+            
+            yearly_data.append({'Year': str(yr), 'Return': yr_wfa.sum(), 'Type': tr('wfa_name')})
+            yearly_data.append({'Year': str(yr), 'Return': yr_static.sum(), 'Type': tr('benchmark').format(best_t1)})
+        
+        y_compare_df = pd.DataFrame(yearly_data)
+        
+        # Yearly Return Bar Chart (Grouped)
+        fig_yr = px.bar(y_compare_df, x='Year', y='Return', color='Type', barmode='group',
+                        color_discrete_map={tr('wfa_name'): PRIMARY_COLOR, tr('benchmark').format(best_t1): '#f59e0b'},
+                        text_auto='.1%')
+        fig_yr.update_layout(height=380, title=tr('yearly_ret_chart'), showlegend=True, xaxis_type='category')
+        st.plotly_chart(fig_yr, use_container_width=True)
+        
+        # Table remains showing selected strategy details for audit
+        yearly_metrics = []
         for yr in years:
             yr_rets = strat_rets[strat_rets.index.year == yr]
             yr_sigs = strat_signals[strat_signals.index.year == yr]
-            yearly_data[str(yr)] = get_stat_col(yr_rets, yr_sigs)
+            y_st = calculate_detailed_stats(yr_rets, yr_sigs)
+            y_st['Year'] = str(yr)
+            yearly_metrics.append(y_st)
         
-        st.dataframe(pd.DataFrame(yearly_data).T, use_container_width=True)
+        y_df = pd.DataFrame(yearly_metrics)
+        df_display = y_df.set_index('Year')[['Total Return', 'Annualized Return', 'Max Drawdown', 'Sharpe Ratio', 'Win Rate', 'Trade Count']]
+        df_display.columns = [tr('col_total_return'), tr('col_ann_return'), tr('col_max_dd'), tr('col_sharpe'), tr('col_win_rate'), tr('col_trades')]
+        
+        final_format_dict = {
+            tr('col_total_return'): '{:.2%}',
+            tr('col_ann_return'): '{:.2%}',
+            tr('col_max_dd'): '{:.2%}',
+            tr('col_sharpe'): '{:.2f}',
+            tr('col_win_rate'): '{:.2%}',
+        }
+        st.dataframe(df_display.style.format(final_format_dict), use_container_width=True)
 
-    with t3:
-        st.subheader("📜 Backtest & Trade Journal (SQLite)")
-        db = BacktestDB()
+        st.markdown("---")
+        st.subheader(f"{tr('t_evolution')} ({strat_name})")
+        st.info(tr('t_evolution_info'))
+        full_roll_sharpe = df_pnl_adj.rolling(252).mean() / df_pnl_adj.rolling(252).std() * np.sqrt(252)
+        df_full_sel = full_roll_sharpe.shift(1)
+        full_selection = df_full_sel.apply(lambda row: 25 if row.isna().all() else row.idxmax(), axis=1)
+        full_selection = full_selection.loc['2016-01-01':]
+        fig_t = px.line(x=full_selection.index, y=full_selection.values)
+        fig_t.update_traces(line=dict(color=PRIMARY_COLOR, width=2))
+        fig_t.update_layout(height=300, margin=dict(l=0, r=0, t=10, b=0), yaxis_title="T Value", xaxis_title="")
+        st.plotly_chart(fig_t, use_container_width=True)
+
+    with t_sig:
+        st.subheader(f"{tr('price_signals')} ({strat_name})")
+        st.info(tr('timing_info'))
+        sub_price = df_price.loc[split_d:end_d]
+        fig_p = go.Figure()
+        fig_p.add_trace(go.Scatter(x=sub_price.index, y=sub_price['P_1500'], name="IF Daily Close", line=dict(color=NEUTRAL_COLOR, width=1)))
         
-        # 1. Backtest History
-        st.write("### Backtest Run History")
-        runs_df = db.get_all_runs()
-        if not runs_df.empty:
-            st.dataframe(runs_df, use_container_width=True)
+        longs = sub_price[strat_signals_oos == 1]
+        shorts = sub_price[strat_signals_oos == -1]
+        fig_p.add_trace(go.Scatter(x=longs.index, y=longs['P_1500'], mode='markers', name=tr('open_long'), marker=dict(symbol='triangle-up', color=POSITIVE_COLOR, size=10)))
+        fig_p.add_trace(go.Scatter(x=shorts.index, y=shorts['P_1500'], mode='markers', name=tr('open_short'), marker=dict(symbol='triangle-down', color=NEGATIVE_COLOR, size=10)))
+        fig_p.update_layout(height=500, margin=dict(l=0, r=0, t=10, b=0), legend=dict(orientation="h", y=1.05))
+        st.plotly_chart(fig_p, use_container_width=True)
+        
+        active_days = strat_signals_oos[strat_signals_oos != 0].index
+        if len(active_days) > 0:
+            st.markdown("---")
+            st.subheader(f"{tr('simulated_trades')} ({strat_name})")
             
-            # 2. Latest Run Details
-            latest_id = runs_df.iloc[0]['run_id']
-            st.write(f"### Latest Trade Details (Run #{latest_id})")
-            
-            # Filters for the journal
-            trades_raw = db.get_trades(latest_id)
-            if not trades_raw.empty:
-                f1, f2 = st.columns(2)
-                type_filter = f1.multiselect("Filter by Type", trades_raw['trade_type'].unique())
-                
-                filtered_trades = trades_raw
-                if type_filter:
-                    filtered_trades = trades_raw[trades_raw['trade_type'].isin(type_filter)]
-                
-                st.dataframe(filtered_trades, use_container_width=True)
-                
-                # Simple count chart
-                fig_tc = px.bar(
-                    filtered_trades['trade_type'].value_counts(),
-                    title="Trade Type Distribution",
-                    labels={'value': 'Count', 'index': 'Type'},
-                    color_discrete_sequence=['#4f46e5']
-                )
-                fig_tc.update_layout(height=300)
-                st.plotly_chart(fig_tc, use_container_width=True)
+            # Prepare WFA Selection series for mapping
+            # Note: sub_sel is already sliced to [start_d:end_d] in the main logic
+            # If manual mode, selected_t is used
+            if mode == tr('manual_t'):
+                t_history = pd.Series(selected_t, index=active_days)
             else:
-                st.info("No trades found for the latest run.")
-        else:
-            st.warning("No backtest runs found in SQLite. Run `scripts/02_backtest_engine.py` first.")
+                t_history = sub_sel.loc[active_days]
+
+            sim_trades = pd.DataFrame({
+                tr('col_date'): active_days.strftime('%Y-%m-%d'),
+                tr('col_price'): sub_price.loc[active_days, 'P_1500'].round(2),
+                tr('direction'): strat_signals_oos.loc[active_days].map({1.0: tr('buy'), -1.0: tr('sell')}),
+                tr('col_selected_t'): t_history.values.astype(int),
+                'Daily Ret': strat_rets_oos.loc[active_days],
+                tr('col_cum_pnl'): (1 + strat_rets_oos.loc[active_days]).cumprod() - 1
+            })
+            
+            def color_signal(val):
+                c = POSITIVE_COLOR if val == tr('buy') else NEGATIVE_COLOR if val == tr('sell') else 'black'
+                return f'color: {c}; font-weight: bold;'
+                
+            st.dataframe(
+                sim_trades.style.map(color_signal, subset=[tr('direction')])
+                .format({'Daily Ret': '{:.2%}', tr('col_cum_pnl'): '{:.2%}'}), 
+                use_container_width=True
+            )
 
 else:
-    st.error("Data files not found. Please run scripts/03_generate_pnl_matrix.py first.")
+    st.error(tr('data_not_found'))

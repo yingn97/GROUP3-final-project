@@ -82,7 +82,7 @@ def display_performance_report(equity_curve, trades=None):
         'total_trades':  total_trades,
     }
 
-def calculate_detailed_stats(rets, signals):
+def calculate_detailed_stats(rets, signals=None):
     """
     Calculates a comprehensive dictionary of performance metrics.
     Used by both GUI and standalone analysis scripts.
@@ -103,26 +103,34 @@ def calculate_detailed_stats(rets, signals):
     dd = (eq - peak) / peak
     max_dd = dd.min()
     
-    # Trade Stats
-    trade_mask = (signals != 0)
-    trades_pnl = rets[trade_mask]
-    num_trades = int(trade_mask.sum())
-    
-    win_rate = (trades_pnl > 0).sum() / num_trades if num_trades > 0 else 0
-    avg_trade_pnl = trades_pnl.mean() if num_trades > 0 else 0
-    
-    # Profit/Loss Ratio
-    avg_gain = trades_pnl[trades_pnl > 0].mean() if (trades_pnl > 0).any() else 0
-    avg_loss = abs(trades_pnl[trades_pnl < 0].mean()) if (trades_pnl < 0).any() else 0
-    pl_ratio = avg_gain / avg_loss if avg_loss != 0 else 0
-    
-    # Long/Short Ratio
-    num_long = (signals == 1).sum()
-    long_ratio = num_long / num_trades if num_trades > 0 else 0
+    # Trade Stats (Only if signals provided)
+    if signals is not None:
+        trade_mask = (signals != 0)
+        trades_pnl = rets[trade_mask]
+        num_trades = int(trade_mask.sum())
+        
+        win_rate = (trades_pnl > 0).sum() / num_trades if num_trades > 0 else 0
+        avg_trade_pnl = trades_pnl.mean() if num_trades > 0 else 0
+        
+        # Profit/Loss Ratio
+        avg_gain = trades_pnl[trades_pnl > 0].mean() if (trades_pnl > 0).any() else 0
+        avg_loss = abs(trades_pnl[trades_pnl < 0].mean()) if (trades_pnl < 0).any() else 0
+        pl_ratio = avg_gain / avg_loss if avg_loss != 0 else 0
+        
+        # Long/Short Ratio
+        num_long = (signals == 1).sum()
+        long_ratio = num_long / num_trades if num_trades > 0 else 0
+    else:
+        num_trades = 0
+        win_rate = 0
+        avg_trade_pnl = 0
+        pl_ratio = 0
+        long_ratio = 0
     
     return {
         "Total Return": total_ret,
         "Annualized Return": ann_ret,
+        "Sharpe Ratio": sharpe,
         "Max Drawdown": max_dd,
         "Calmar Ratio": ann_ret / abs(max_dd) if max_dd != 0 else 0,
         "Avg Trade PnL": avg_trade_pnl,
