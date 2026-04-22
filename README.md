@@ -19,7 +19,8 @@
 | **Hybrid Persistence** | Heavy time-series data (equity curves, factor matrices) stored as **Parquet**; relational metadata (trade journals, run KPIs) stored in **SQLite**. |
 | **Vectorized WFA** | Walk-Forward Analysis with 1-year/6-month rolling windows for dynamic parameter switching in out-of-sample validation. |
 | **Decoupled Metrics** | Core calculations (Sharpe, Drawdown, Calmar, Win Rate) centralized in `src/performance.py`, shared by both the engine and the GUI. |
-| **Interactive Dashboard** | Streamlit + Plotly front-end with real-time parameter tuning, commission sensitivity, and a SQLite trade audit trail. |
+| **CTA Alpha Research Terminal** | Professional Streamlit + Plotly dashboard with real-time IS/OOS benchmarking, dynamic WFA vs. Static comparison, and detailed trade audit history. |
+| **Multi-Language Support** | Full i18n implementation (English/Chinese) for global accessibility. |
 | **Transaction Cost Analysis** | Dedicated TCA module simulating double-sided commission (万分之二) and configurable slippage. |
 
 ---
@@ -46,8 +47,9 @@
 │   ├── 04_analyze_switching.py   # Dynamic vs Static switching window comparison
 │   └── 05_oos_validation.py      # In-Sample / Out-of-Sample validation report
 │
-├── gui/                          # Front-End Interface
-│   └── app.py                    # Streamlit interactive dashboard
+├── gui/                          # Professional Front-End
+│   ├── app.py                    # CTA Alpha Research Terminal dashboard
+│   └── i18n.py                   # Internationalization (EN/CN) dictionary
 │
 ├── tca/                          # Transaction Cost Analysis
 │   └── tca_analysis.py           # Commission & slippage breakdown tools
@@ -176,6 +178,9 @@ python scripts/05_oos_validation.py
 ```bash
 streamlit run gui/app.py
 ```
+
+> [!NOTE]
+> The terminal now supports **Dynamic vs Static** comparison and **Walk-Forward Analysis (WFA)** benchmarking directly in the UI.
 
 ---
 
