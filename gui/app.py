@@ -73,24 +73,51 @@ with st.sidebar:
     df_pnl, df_sig, df_price = load_data()
     
     if df_pnl is not None:
-        # Date range synchronized slider + input
+        # Date range limits
         min_date = datetime.date(2015, 1, 1)
         max_date = datetime.date(2024, 12, 31)
 
-        # Initialize session state keys if not present
+        # --- Helper functions for 2-way sync ---
+        def on_slider_change():
+            st.session_state.start_input = st.session_state.total_slider[0]
+            st.session_state.end_input = st.session_state.total_slider[1]
+
+        def on_input_change():
+            # Clamp inputs to valid range
+            s = max(min_date, min(max_date, st.session_state.start_input))
+            e = max(min_date, min(max_date, st.session_state.end_input))
+            if s > e: s, e = e, s
+            st.session_state.total_slider = (s, e)
+
+        def on_split_slider_change():
+            st.session_state.split_input = st.session_state.split_date_slider
+
+        def on_split_input_change():
+            st.session_state.split_date_slider = st.session_state.split_input
+
+        # Initialize session state keys
         if 'total_slider' not in st.session_state:
             st.session_state.total_slider = (datetime.date(2016, 1, 1), datetime.date(2024, 12, 31))
-        if 'split_date' not in st.session_state:
-            st.session_state.split_date = datetime.date(2020, 1, 1)
-
-        st.slider(tr('date_range'), min_value=min_date, max_value=max_date, key='total_slider')
+        if 'start_input' not in st.session_state:
+            st.session_state.start_input = st.session_state.total_slider[0]
+        if 'end_input' not in st.session_state:
+            st.session_state.end_input = st.session_state.total_slider[1]
         
-        start_a = st.session_state.total_slider[0]
-        end_c = st.session_state.total_slider[1]
+        if 'split_date_slider' not in st.session_state:
+            st.session_state.split_date_slider = datetime.date(2020, 1, 1)
+        if 'split_input' not in st.session_state:
+            st.session_state.split_input = st.session_state.split_date_slider
+
+        # --- Sidebar Widgets ---
+        st.slider(tr('date_range'), min_value=min_date, max_value=max_date, key='total_slider', on_change=on_slider_change)
+        
+        c1, c2 = st.columns(2)
+        start_a = c1.date_input(tr('start_date'), key='start_input', on_change=on_input_change, label_visibility="collapsed")
+        end_c = c2.date_input(tr('end_date'), key='end_input', on_change=on_input_change, label_visibility="collapsed")
 
         # Split point selection
-        st.slider(tr('split_date'), min_value=start_a, max_value=end_c, key='split_date')
-        split_b = st.session_state.split_date
+        st.slider(tr('split_date'), min_value=start_a, max_value=end_c, key='split_date_slider', on_change=on_split_slider_change)
+        split_b = st.date_input(tr('split_date'), key='split_input', on_change=on_split_input_change, label_visibility="collapsed")
 
         start_d, split_d, end_d = pd.to_datetime(start_a), pd.to_datetime(split_b), pd.to_datetime(end_c)
         
@@ -98,12 +125,21 @@ with st.sidebar:
         
         st.markdown("---")
         
-        # Calculate Best T1 for Training Period [A, B]
-        is_pnl = adjust_pnl_for_commission(df_pnl.loc[start_d:split_d], df_sig.loc[start_d:split_d], comm_input)
-        is_sharpe = (is_pnl.mean() * 252) / (is_pnl.std() * np.sqrt(252))
+        # Calculate Best T1 for Training Period [start_d, split_d)
+        # We define split_d as the inclusive start of OOS, so IS ends strictly BEFORE split_d
+        is_pnl_all = df_pnl.loc[start_d:split_d]
+        if split_d in is_pnl_all.index and len(is_pnl_all) > 1:
+            is_pnl = is_pnl_all.iloc[:-1] # Exclude the split day from IS
+        else:
+            is_pnl = is_pnl_all
+        
+        is_pnl_adj = adjust_pnl_for_commission(is_pnl, df_sig.reindex(is_pnl.index), comm_input)
+        is_sharpe = (is_pnl_adj.mean() * 252) / (is_pnl_adj.std() * np.sqrt(252))
         best_t1 = is_sharpe.idxmax() if not is_sharpe.isna().all() else 25
 
-        st.info(tr('training_info').format(start_a, split_b, best_t1))
+        # Determine actual labels
+        is_end_date = is_pnl.index[-1].date() if not is_pnl.empty else split_b
+        st.info(tr('training_info').format(start_a, is_end_date, best_t1))
         st.success(tr('testing_info').format(split_b, end_c))
 
         st.markdown("---")
@@ -143,8 +179,8 @@ if df_pnl is not None:
     # Benchmarks for Full period [A, C]
     bench_rets_is = df_pnl_adj.loc[start_d:end_d, int(best_t1)]
     
-    # --- FOCUS: Out-of-Sample period [B, C] ---
-    # Slice rets and signals
+    # --- FOCUS: Out-of-Sample period (Inclusive of Split Date B) ---
+    # Slice rets and signals starting EXACTLY from split_d
     strat_rets_oos = strat_rets.loc[split_d:end_d]
     strat_signals_oos = strat_signals.loc[split_d:end_d]
     bench_rets_is_oos = bench_rets_is.loc[split_d:end_d]
@@ -223,12 +259,12 @@ if df_pnl is not None:
         
         yearly_data = []
         for yr in years:
-            # Dynamic (WFA)
-            yr_wfa = wfa_rets_full[wfa_rets_full.index.year == yr]
+            # Current Selection (Manual or WFA)
+            yr_current = strat_rets[strat_rets.index.year == yr]
             # Static (IS Best T1)
             yr_static = bench_rets_is[bench_rets_is.index.year == yr]
             
-            yearly_data.append({'Year': str(yr), 'Return': yr_wfa.sum(), 'Type': tr('wfa_name')})
+            yearly_data.append({'Year': str(yr), 'Return': yr_current.sum(), 'Type': strat_name})
             yearly_data.append({'Year': str(yr), 'Return': yr_static.sum(), 'Type': tr('benchmark').format(best_t1)})
         
         y_compare_df = pd.DataFrame(yearly_data)
@@ -263,7 +299,7 @@ if df_pnl is not None:
         st.dataframe(df_display.style.format(final_format_dict), use_container_width=True)
 
         st.markdown("---")
-        st.subheader(f"{tr('t_evolution')} ({strat_name})")
+        st.subheader(tr('t_evolution'))
         st.info(tr('t_evolution_info'))
         full_roll_sharpe = df_pnl_adj.rolling(252).mean() / df_pnl_adj.rolling(252).std() * np.sqrt(252)
         df_full_sel = full_roll_sharpe.shift(1)
@@ -306,7 +342,7 @@ if df_pnl is not None:
                 tr('col_price'): sub_price.loc[active_days, 'P_1500'].round(2),
                 tr('direction'): strat_signals_oos.loc[active_days].map({1.0: tr('buy'), -1.0: tr('sell')}),
                 tr('col_selected_t'): t_history.values.astype(int),
-                'Daily Ret': strat_rets_oos.loc[active_days],
+                tr('col_daily_ret'): strat_rets_oos.loc[active_days],
                 tr('col_cum_pnl'): (1 + strat_rets_oos.loc[active_days]).cumprod() - 1
             })
             
@@ -316,7 +352,7 @@ if df_pnl is not None:
                 
             st.dataframe(
                 sim_trades.style.map(color_signal, subset=[tr('direction')])
-                .format({'Daily Ret': '{:.2%}', tr('col_cum_pnl'): '{:.2%}'}), 
+                .format({tr('col_daily_ret'): '{:.2%}', tr('col_cum_pnl'): '{:.2%}'}), 
                 use_container_width=True
             )
 

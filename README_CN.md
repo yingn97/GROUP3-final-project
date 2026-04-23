@@ -16,12 +16,11 @@
 |---|---|
 | **事件驱动引擎** | 经典 `DataHandler → Strategy → Portfolio → Execution` 循环 + 集中式事件队列，杜绝未来函数（Look-ahead Bias）。 |
 | **Polars 高性能因子** | 离线 PCA 因子生成采用 Polars + Joblib 并行，~2500 个交易日 30 秒内完成。 |
-| **混合持久化架构** | 重型时序数据（权益曲线、因子矩阵）→ **Parquet**；关系型元数据（交易流水、运行记录）→ **SQLite**。 |
+| **混合持久化架构** | 重型时序数据（权益曲线、因子矩阵）存储为 **Parquet**；关系型元数据（交易流水、运行记录）存储在 **SQLite** 中。 |
 | **向量化 WFA** | Walk-Forward Analysis 支持 1 年/6 月滚动窗口动态参数切换，完成样本外验证。 |
-| **解耦绩效引擎** | 核心统计指标（Sharpe、回撤、Calmar、胜率等）集中于 `src/performance.py`，引擎与 GUI 共用。 |
-| **CTA Alpha 策略研究终端** | 专业级 Streamlit + Plotly 仪表盘，支持实时 IS/OOS 基准对比、动态 WFA vs. 静态对比、以及详细的交易审计历史。 |
-| **多语言支持** | 完整的 i18n 国际化实现（中/英文），支持一键切换。 |
-| **交易成本分析** | 独立 TCA 模块，模拟双边万分之二佣金及可配置滑点。 |
+| **解耦绩效引擎** | 核心统计指标（Sharpe、回撤、Calmar、胜率、盈亏比）集中于 `src/performance.py`，引擎与 GUI 共用。 |
+| **交互式仪表盘** | Streamlit + Plotly 前端，支持日期范围及 IS/OOS 分割的交互式滑动条、佣金敏感度调优、WFA 动态 vs 静态对比，以及通过 `gui/i18n.py` 实现的中英双语支持。 |
+| **交易成本分析** | 独立 TCA 模块，直接查询 SQLite 交易日志，提供精确的佣金及滑点成本细分分析。 |
 
 ---
 
@@ -31,7 +30,7 @@
 5210final project/
 ├── src/                          # 核心引擎（事件驱动架构）
 │   ├── config.py                 # 集中配置中心 & 路径管理
-│   ├── data_handler.py           # 逐根K线推送行情引擎
+│   ├── data_handler.py           # 逐根K线推送行情引擎 (CSV + Parquet)
 │   ├── strategy.py               # 一致性因子信号生成
 │   ├── portfolio.py              # 持仓跟踪 & 0.6% 硬止损
 │   ├── execution.py              # 模拟 OMS & 交易成本模型
@@ -47,28 +46,31 @@
 │   ├── 04_analyze_switching.py   # 动态 vs 静态切换窗口对比
 │   └── 05_oos_validation.py      # 样本内/样本外验证报告
 │
-├── gui/                          # 专业级前端
-│   ├── app.py                    # CTA Alpha 策略研究终端
-│   └── i18n.py                   # 国际化 (EN/CN) 字典
+├── gui/                          # 前端界面
+│   ├── app.py                    # Streamlit 交互式仪表盘 (3 个标签页)
+│   └── i18n.py                   # 双语翻译模块 (English / 中文)
 │
 ├── tca/                          # 交易成本分析
 │   └── tca_analysis.py           # 佣金 & 滑点细分工具
 │
 ├── data/                         # 数据仓库（不纳入版本控制，详见下方）
-│   ├── csi300_min_db/            # 分钟级成份股数据湖（Hive 分区格式）
+│   ├── csi300_min_db/            # Hive 分区格式的分钟级成份股数据湖 (date=YYYY-MM-DD/)
 │   ├── IF.csv                    # IF 主力连续合约 1 分钟 K 线
 │   ├── alpha_consistency_daily.parquet  # 预计算 PCA 因子矩阵
 │   ├── daily_pnl_matrix.parquet  # 全参数空间日收益矩阵
 │   ├── signal_matrix.parquet     # 交易信号矩阵 (1 / -1 / 0)
 │   ├── if_daily.parquet          # 日度价格摘要（GUI 专用）
-│   └── trading_system.db         # SQLite 数据库
+│   └── trading_system.db         # SQLite 数据库 (包含交易流水及元数据)
 │
 ├── output/                       # 生成的报告 & 图表
+│   ├── IS_OOS_COMPARISON_REPORT.png
+│   └── switching_window_comparison.png
+│
 ├── cache/                        # Joblib 缓存（自动生成，不提交）
 ├── requirements.txt              # Python 依赖清单
 ├── .gitignore                    # Git 排除规则
-├── README.md                     # 英文文档
-└── README_CN.md                  # 中文文档（本文件）
+├── LICENSE                       # MIT 许可证
+└── README.md                     # 英文文档
 ```
 
 ---
@@ -108,6 +110,8 @@
        ┌──────────────▼──────────────┐
        │   Streamlit GUI 仪表盘      │
        │  (共用 performance.py)      │
+       │  🎯 核心概览 │ 📊 绩效拆解 │
+       │  🔬 信号观察 │ 🌐 中英双语 │
        └─────────────────────────────┘
 ```
 
@@ -175,8 +179,20 @@ python scripts/05_oos_validation.py
 streamlit run gui/app.py
 ```
 
-> [!NOTE]
-> 该终端现已支持在 UI 中直接进行 **动态 vs 静态** 对比以及 **步进式分析 (WFA)** 基准验证。
+可视化界面包含三个交互式标签页：
+- **🎯 核心概览 (Overview)** — 显示核心 KPI 指标（总收益、夏普、最大回撤、胜率）以及权益曲线和回撤曲线。
+- **📊 绩效拆解 (Analysis)** — 提供详细的绩效评估表、年度收益对比（WFA 动态 vs 静态基准柱状图）以及 T 参数的演化路径。
+- **🔬 信号观察 (Signals)** — 价格与信号的叠加图表，以及包含执行价格、方向、选定 T 值和累计盈亏的模拟信号明细表。
+
+通过侧边栏滑动条可以调整回测周期、样本内外分割点以及佣金率。支持在“静态 T（手动）”与“动态 WFA（自适应）”模式间切换。右上角可切换中英文界面。
+
+### 4. (可选) 交易成本分析 (TCA)
+
+```bash
+python tca/tca_analysis.py
+```
+
+该脚本将读取 SQLite 数据库中最近完成的一次完整回测记录，并输出精确的 TCA 报告，包括毛利/净利对比、平均摩擦成本（bps）以及利润损耗比例。
 
 ---
 
@@ -186,9 +202,10 @@ streamlit run gui/app.py
 |---|---|---|
 | **事件驱动** | `src/engine.py` | 消除未来函数；贴近真实交易基础设施。 |
 | **观察者模式** | 事件队列 | 各组件通过事件 (`MARKET → SIGNAL → ORDER → FILL`) 解耦通信。 |
-| **策略模式** | `src/strategy.py` | 统一接口，支持策略热插拔。 |
+| **策略模式** | `src/strategy.py` | 基于 `Strategy` 抽象基类统一接口，支持策略灵活替换。 |
 | **混合存储** | `database.py` + Parquet | SQLite 处理关系查询（交易审计）；Parquet 处理列式分析（权益曲线）。 |
 | **集中配置** | `src/config.py` | 路径、参数、实验协议的唯一真相源。 |
+| **i18n (国际化)** | `gui/i18n.py` | 通过基于 Session State 的翻译字典实现中英双语支持。 |
 
 ---
 

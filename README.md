@@ -18,10 +18,9 @@
 | **Polars-Powered Alpha** | Offline PCA factor generation using Polars + Joblib parallelism — processes ~2,500 trading days in under 30 seconds. |
 | **Hybrid Persistence** | Heavy time-series data (equity curves, factor matrices) stored as **Parquet**; relational metadata (trade journals, run KPIs) stored in **SQLite**. |
 | **Vectorized WFA** | Walk-Forward Analysis with 1-year/6-month rolling windows for dynamic parameter switching in out-of-sample validation. |
-| **Decoupled Metrics** | Core calculations (Sharpe, Drawdown, Calmar, Win Rate) centralized in `src/performance.py`, shared by both the engine and the GUI. |
-| **CTA Alpha Research Terminal** | Professional Streamlit + Plotly dashboard with real-time IS/OOS benchmarking, dynamic WFA vs. Static comparison, and detailed trade audit history. |
-| **Multi-Language Support** | Full i18n implementation (English/Chinese) for global accessibility. |
-| **Transaction Cost Analysis** | Dedicated TCA module simulating double-sided commission (万分之二) and configurable slippage. |
+| **Decoupled Metrics** | Core calculations (Sharpe, Drawdown, Calmar, Win Rate, P/L Ratio) centralized in `src/performance.py`, shared by both the engine and the GUI. |
+| **Interactive Dashboard** | Streamlit + Plotly front-end with interactive sliders for date range & IS/OOS split, commission sensitivity tuning, WFA dynamic vs static comparison, and bilingual (EN/CN) support via `gui/i18n.py`. |
+| **Transaction Cost Analysis** | Dedicated TCA module querying SQLite trade journal for precise commission & slippage breakdown. |
 
 ---
 
@@ -31,7 +30,7 @@
 5210final project/
 ├── src/                          # Core Engine (Event-Driven Architecture)
 │   ├── config.py                 # Centralized configuration & path management
-│   ├── data_handler.py           # Bar-by-bar market data engine
+│   ├── data_handler.py           # Bar-by-bar market data engine (CSV + Parquet)
 │   ├── strategy.py               # Consistency factor signal generation
 │   ├── portfolio.py              # Position tracking & 0.6% hard stop-loss
 │   ├── execution.py              # Simulated OMS & transaction cost model
@@ -47,15 +46,15 @@
 │   ├── 04_analyze_switching.py   # Dynamic vs Static switching window comparison
 │   └── 05_oos_validation.py      # In-Sample / Out-of-Sample validation report
 │
-├── gui/                          # Professional Front-End
-│   ├── app.py                    # CTA Alpha Research Terminal dashboard
-│   └── i18n.py                   # Internationalization (EN/CN) dictionary
+├── gui/                          # Front-End Interface
+│   ├── app.py                    # Streamlit interactive dashboard (3 tabs)
+│   └── i18n.py                   # Bilingual translation module (English / 中文)
 │
 ├── tca/                          # Transaction Cost Analysis
 │   └── tca_analysis.py           # Commission & slippage breakdown tools
 │
 ├── data/                         # Data Repository (git-ignored, see below)
-│   ├── csi300_min_db/            # Partitioned 1-min stock data (Hive-style)
+│   ├── csi300_min_db/            # Hive-style partitioned 1-min stock data (date=YYYY-MM-DD/)
 │   ├── IF.csv                    # IF index futures continuous 1-min bars
 │   ├── alpha_consistency_daily.parquet  # Pre-computed PCA factor matrix
 │   ├── daily_pnl_matrix.parquet  # Full parameter-space daily PnL matrix
@@ -65,14 +64,13 @@
 │
 ├── output/                       # Generated Reports & Charts
 │   ├── IS_OOS_COMPARISON_REPORT.png
-│   ├── switching_window_comparison.png
-│   └── equity_T24_engine.parquet
+│   └── switching_window_comparison.png
 │
 ├── cache/                        # Joblib cache (auto-generated, git-ignored)
 ├── requirements.txt              # Python dependencies
 ├── .gitignore                    # Git exclusion rules
-├── README.md                     # English documentation (this file)
-└── README_CN.md                  # Chinese documentation
+├── LICENSE                       # MIT License
+└── README.md                     # Documentation (this file)
 ```
 
 ---
@@ -112,6 +110,8 @@
        ┌──────────────▼──────────────┐
        │   Streamlit GUI Dashboard   │
        │  (performance.py shared)    │
+       │  🎯 Overview │ 📊 Analysis │
+       │  🔬 Signals  │ 🌐 EN/CN   │
        └─────────────────────────────┘
 ```
 
@@ -179,8 +179,20 @@ python scripts/05_oos_validation.py
 streamlit run gui/app.py
 ```
 
-> [!NOTE]
-> The terminal now supports **Dynamic vs Static** comparison and **Walk-Forward Analysis (WFA)** benchmarking directly in the UI.
+The dashboard provides three interactive tabs:
+- **🎯 Overview** — KPI cards (Total Return, Sharpe, Max Drawdown, Win Rate) with equity & drawdown curves
+- **📊 Analysis** — Comprehensive metrics table, yearly performance breakdown (WFA Dynamic vs Static bar chart), and T-parameter adaptive path
+- **🔬 Signals** — Price & signal overlay chart with simulated trade history table (entry price, direction, selected T, cumulative PnL)
+
+Use the sidebar sliders to adjust the backtest period, IS/OOS split point, and commission rate. Toggle between Static T (Manual) and Dynamic WFA (Adaptive) modes. Switch language via the top-right dropdown.
+
+### 4. (Optional) Transaction Cost Analysis
+
+```bash
+python tca/tca_analysis.py
+```
+
+Reads the latest completed backtest run from the SQLite database and prints a precision TCA report including gross/net profit, average friction (bps), and profit erosion percentage.
 
 ---
 
@@ -190,9 +202,10 @@ streamlit run gui/app.py
 |---|---|---|
 | **Event-Driven** | `src/engine.py` | Eliminates look-ahead bias; mirrors real trading infrastructure. |
 | **Observer** | Event Queue | Components react to events (`MARKET → SIGNAL → ORDER → FILL`) without tight coupling. |
-| **Strategy Pattern** | `src/strategy.py` | Swappable strategy implementations behind a common interface. |
+| **Strategy Pattern** | `src/strategy.py` | Swappable strategy implementations behind a common `Strategy` ABC interface. |
 | **Hybrid Storage** | `database.py` + Parquet | SQLite for relational queries (trade audit); Parquet for columnar analytics (equity curves). |
 | **Centralized Config** | `src/config.py` | Single source of truth for paths, parameters, and experiment protocol. |
+| **i18n (Internationalization)** | `gui/i18n.py` | Bilingual (EN/CN) support via a session-state-driven translation dictionary. |
 
 ---
 
