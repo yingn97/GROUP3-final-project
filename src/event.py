@@ -95,9 +95,7 @@ class FillEvent(Event):
     def calculate_ib_commission(self):
         """
         Placeholder for commission calculation.
-        In this project, we use 0.0002 as specified in the plan.
+        In this project, we use 0.0004 as specified in the plan (Double-sided).
         """
         # Note: fill_cost is quantity * price
-        # We handle this in Execution or Portfolio usually, 
-        # but following basic event-driven structure:
-        return 0.0002 * self.fill_cost
+        return 0.0004 * self.fill_cost

@@ -44,7 +44,7 @@ class SimulatedExecutionHandler(ExecutionHandler):
         """
         if event.type == 'ORDER':
             # Slippage & Commission
-            commission_rate = STRATEGY_PARAMS.get('commission_rate', 0.0002)
+            commission_rate = STRATEGY_PARAMS.get('commission_rate', 0.0004)
             slippage = BACKTEST_CONFIG.get('slippage', 0.0)
             
             fill_datetime = self.bars.get_latest_bar_datetime(event.symbol)

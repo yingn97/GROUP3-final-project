@@ -1,3 +1,7 @@
+import os
+import pandas as pd
+import numpy as np
+
 # Add root and src directory to sys.path for importing src
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import sys
@@ -10,8 +14,8 @@ from config import (
     logger
 )
 
-COMMISSION = STRATEGY_PARAMS['commission_rate']
-STOP_LOSS = STRATEGY_PARAMS['stop_loss_pct']     
+COMMISSION = STRATEGY_PARAMS['commission_rate'] # 0.0004 (Double-sided)
+STOP_LOSS = STRATEGY_PARAMS['stop_loss_pct']     # 0.6% -> Total Loss 0.64%
 
 def main():
     logger.info("Loading Alpha data...")

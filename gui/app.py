@@ -121,7 +121,7 @@ with st.sidebar:
 
         start_d, split_d, end_d = pd.to_datetime(start_a), pd.to_datetime(split_b), pd.to_datetime(end_c)
         
-        comm_input = st.slider(tr('comm_rate'), 0.0, 0.0010, 0.0002, 0.0001, format="%.4f")
+        comm_input = st.slider(tr('comm_rate'), 0.0, 0.0010, 0.0004, 0.0001, format="%.4f")
         
         st.markdown("---")
         
@@ -317,8 +317,12 @@ if df_pnl is not None:
         fig_p = go.Figure()
         fig_p.add_trace(go.Scatter(x=sub_price.index, y=sub_price['P_1500'], name="IF Daily Close", line=dict(color=NEUTRAL_COLOR, width=1)))
         
-        longs = sub_price[strat_signals_oos == 1]
-        shorts = sub_price[strat_signals_oos == -1]
+        # --- Fix: Align signals with price index to avoid IndexingError ---
+        aligned_signals = strat_signals_oos.reindex(sub_price.index).fillna(0)
+        
+        longs = sub_price[aligned_signals == 1]
+        shorts = sub_price[aligned_signals == -1]
+        # -----------------------------------------------------------------
         fig_p.add_trace(go.Scatter(x=longs.index, y=longs['P_1500'], mode='markers', name=tr('open_long'), marker=dict(symbol='triangle-up', color=POSITIVE_COLOR, size=10)))
         fig_p.add_trace(go.Scatter(x=shorts.index, y=shorts['P_1500'], mode='markers', name=tr('open_short'), marker=dict(symbol='triangle-down', color=NEGATIVE_COLOR, size=10)))
         fig_p.update_layout(height=500, margin=dict(l=0, r=0, t=10, b=0), legend=dict(orientation="h", y=1.05))
@@ -329,31 +333,58 @@ if df_pnl is not None:
             st.markdown("---")
             st.subheader(f"{tr('simulated_trades')} ({strat_name})")
             
-            # Prepare WFA Selection series for mapping
-            # Note: sub_sel is already sliced to [start_d:end_d] in the main logic
-            # If manual mode, selected_t is used
+            # Prepare T History for display
             if mode == tr('manual_t'):
                 t_history = pd.Series(selected_t, index=active_days)
             else:
                 t_history = sub_sel.loc[active_days]
 
-            sim_trades = pd.DataFrame({
-                tr('col_date'): active_days.strftime('%Y-%m-%d'),
-                tr('col_price'): sub_price.loc[active_days, 'P_1500'].round(2),
-                tr('direction'): strat_signals_oos.loc[active_days].map({1.0: tr('buy'), -1.0: tr('sell')}),
-                tr('col_selected_t'): t_history.values.astype(int),
-                tr('col_daily_ret'): strat_rets_oos.loc[active_days],
-                tr('col_cum_pnl'): (1 + strat_rets_oos.loc[active_days]).cumprod() - 1
-            })
+            # --- Refactor: Generate two rows per day (Entry & Exit) ---
+            trade_rows = []
+            for d in active_days:
+                sig = strat_signals_oos.loc[d]
+                ret = strat_rets_oos.loc[d]
+                p_exit = sub_price.loc[d, 'P_1500']
+                t_val = int(t_history.loc[d])
+                
+                # Back-calculate P_T from return for display
+                # Raw_Ret = (P_Exit - P_T) / P_T
+                raw_ret = (ret + comm_input) / sig if sig != 0 else 0
+                p_entry = p_exit / (1 + raw_ret)
+                
+                # Entry Row
+                trade_rows.append({
+                    tr('col_date'): d.strftime('%Y-%m-%d'),
+                    tr('col_time'): (datetime.datetime.combine(d, datetime.time(9, 30)) + datetime.timedelta(minutes=t_val)).strftime('%H:%M'),
+                    tr('direction'): tr('buy') if sig > 0 else tr('sell'),
+                    tr('col_price'): round(p_entry, 2),
+                    tr('col_type'): tr('open_pos'),
+                    tr('col_selected_t'): t_val,
+                    tr('col_daily_ret'): "-",
+                    tr('col_cum_pnl'): "-" 
+                })
+                
+                # Exit Row
+                trade_rows.append({
+                    tr('col_date'): d.strftime('%Y-%m-%d'),
+                    tr('col_time'): "15:00",
+                    tr('direction'): tr('sell') if sig > 0 else tr('buy'),
+                    tr('col_price'): round(p_exit, 2),
+                    tr('col_type'): tr('close_pos'),
+                    tr('col_selected_t'): t_val,
+                    tr('col_daily_ret'): f"{ret:.2%}",
+                    tr('col_cum_pnl'): f"{((1 + strat_rets_oos.loc[:d]).cumprod() - 1).iloc[-1]:.2%}"
+                })
+
+            sim_trades = pd.DataFrame(trade_rows)
             
             def color_signal(val):
-                c = POSITIVE_COLOR if val == tr('buy') else NEGATIVE_COLOR if val == tr('sell') else 'black'
-                return f'color: {c}; font-weight: bold;'
+                if val == tr('buy'): return f'color: {POSITIVE_COLOR}; font-weight: bold;'
+                if val == tr('sell'): return f'color: {NEGATIVE_COLOR}; font-weight: bold;'
+                return ''
                 
             st.dataframe(
                 sim_trades.style.map(color_signal, subset=[tr('direction')])
-                .format({tr('col_daily_ret'): '{:.2%}', tr('col_cum_pnl'): '{:.2%}'}), 
-                use_container_width=True
             )
 
 else:

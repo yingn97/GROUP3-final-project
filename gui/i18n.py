@@ -76,7 +76,11 @@ TRANSLATIONS = {
         'col_selected_t': "Selected T",
         'col_daily_ret': "Daily Ret",
         'col_cum_pnl': "Cum. PnL",
-        'col_date': "Date"
+        'col_date': "Date",
+        'open_pos': "Open",
+        'close_pos': "Close",
+        'col_time': "Time",
+        'col_type': "Type"
     },
     '中文': {
         'title': "CTA Alpha 策略研究终端",
@@ -153,7 +157,11 @@ TRANSLATIONS = {
         'col_selected_t': "当日 T 值",
         'col_daily_ret': "当日收益",
         'col_cum_pnl': "累计盈亏",
-        'col_date': "日期"
+        'col_date': "日期",
+        'open_pos': "开仓",
+        'close_pos': "平仓",
+        'col_time': "时间",
+        'col_type': "类型"
     }
 }
 

@@ -25,7 +25,7 @@ STRATEGY_PARAMS = {
     'threshold_window': 60,   # Rolling mean period for R indicator
     'stop_loss_pct': 0.006,   # 0.6% daily stop loss
     'multiplier': 300.0,      # IF multiplier
-    'commission_rate': 0.0002 # Double-sided万分之二 (simplified as 0.0002 per fill_cost)
+    'commission_rate': 0.0004 # 双边万四 (单边万二 * 2)
 }
 
 # Backtest Configuration

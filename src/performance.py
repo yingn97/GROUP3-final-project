@@ -87,7 +87,13 @@ def calculate_detailed_stats(rets, signals=None):
     Calculates a comprehensive dictionary of performance metrics.
     Used by both GUI and standalone analysis scripts.
     """
-    if len(rets) == 0: return {}
+    if len(rets) == 0: 
+        return {
+            "Total Return": 0.0, "Annualized Return": 0.0, "Sharpe Ratio": 0.0,
+            "Max Drawdown": 0.0, "Calmar Ratio": 0.0, "Avg Trade PnL": 0.0,
+            "Trade Count": 0, "Win Rate": 0.0, "P/L Ratio": 0.0, "Long Ratio": 0.0,
+            "Avg Daily Return": 0.0, "Equity Curve": pd.Series([1.0]), "Drawdown Curve": pd.Series([0.0])
+        }
     
     # Equity Curve
     eq = (1 + rets).cumprod()
@@ -143,7 +149,7 @@ def calculate_detailed_stats(rets, signals=None):
         "Drawdown Curve": dd
     }
 
-def adjust_pnl_for_commission(df_pnl, df_sig, new_comm, original_comm=0.0002):
+def adjust_pnl_for_commission(df_pnl, df_sig, new_comm, original_comm=0.0004):
     """
     Adjusts a PnL matrix/series based on new commission rate.
     Uses the logic: NewPnL = OldPnL + OriginalComm - NewComm (for each trade).
