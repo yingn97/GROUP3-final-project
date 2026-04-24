@@ -95,9 +95,15 @@ with st.sidebar:
         def on_split_input_change():
             st.session_state.split_date_slider = st.session_state.split_input
 
+        def on_t_slider_change():
+            st.session_state.t_input = st.session_state.t_slider
+
+        def on_t_input_change():
+            st.session_state.t_slider = st.session_state.t_input
+
         # Initialize session state keys
         if 'total_slider' not in st.session_state:
-            st.session_state.total_slider = (datetime.date(2016, 1, 1), datetime.date(2024, 12, 31))
+            st.session_state.total_slider = (datetime.date(2015, 1, 1), datetime.date(2024, 12, 31))
         if 'start_input' not in st.session_state:
             st.session_state.start_input = st.session_state.total_slider[0]
         if 'end_input' not in st.session_state:
@@ -112,12 +118,12 @@ with st.sidebar:
         st.slider(tr('date_range'), min_value=min_date, max_value=max_date, key='total_slider', on_change=on_slider_change)
         
         c1, c2 = st.columns(2)
-        start_a = c1.date_input(tr('start_date'), key='start_input', on_change=on_input_change, label_visibility="collapsed")
-        end_c = c2.date_input(tr('end_date'), key='end_input', on_change=on_input_change, label_visibility="collapsed")
+        start_a = c1.date_input(tr('start_date'), min_value=min_date, max_value=max_date, key='start_input', on_change=on_input_change, label_visibility="collapsed")
+        end_c = c2.date_input(tr('end_date'), min_value=min_date, max_value=max_date, key='end_input', on_change=on_input_change, label_visibility="collapsed")
 
         # Split point selection
         st.slider(tr('split_date'), min_value=start_a, max_value=end_c, key='split_date_slider', on_change=on_split_slider_change)
-        split_b = st.date_input(tr('split_date'), key='split_input', on_change=on_split_input_change, label_visibility="collapsed")
+        split_b = st.date_input(tr('split_date'), min_value=start_a, max_value=end_c, key='split_input', on_change=on_split_input_change, label_visibility="collapsed")
 
         start_d, split_d, end_d = pd.to_datetime(start_a), pd.to_datetime(split_b), pd.to_datetime(end_c)
         
@@ -146,8 +152,19 @@ with st.sidebar:
         mode = st.radio(tr('selection_mode'), [tr('manual_t'), tr('wfa_dynamic')], index=1)
         
         if mode == tr('manual_t'):
-            selected_t = st.slider(tr('entry_timing'), 21, 60, int(best_t1))
+            # Initialize with best_t1 if not already set by user
+            if 't_initialized' not in st.session_state:
+                st.session_state.t_slider = int(best_t1)
+                st.session_state.t_input = int(best_t1)
+                st.session_state.t_initialized = True
+            
+            st.slider(tr('entry_timing'), 21, 60, key='t_slider', on_change=on_t_slider_change)
+            selected_t = st.number_input(tr('entry_timing'), 21, 60, key='t_input', on_change=on_t_input_change, label_visibility="collapsed")
         else:
+            # If we go back to dynamic, we can clear the initialization flag 
+            # so that next time it resets to the (potentially new) best_t1
+            if 't_initialized' in st.session_state:
+                del st.session_state['t_initialized']
             selected_t = 25 
         
         st.markdown("---")
@@ -162,22 +179,33 @@ if df_pnl is not None:
     df_pnl_adj = adjust_pnl_for_commission(df_pnl, df_sig, comm_input)
     
     if mode == tr('manual_t'):
-        strat_rets = df_pnl_adj.loc[start_d:end_d, selected_t]
-        strat_signals = df_sig.loc[start_d:end_d, selected_t]
+        effective_start = start_d
+        strat_rets = df_pnl_adj.loc[effective_start:end_d, selected_t]
+        strat_signals = df_sig.loc[effective_start:end_d, selected_t]
         strat_name = tr('fixed_t_name').format(selected_t)
     else:
         roll_sharpe = df_pnl_adj.rolling(252).mean() / df_pnl_adj.rolling(252).std() * np.sqrt(252)
         df_selection = roll_sharpe.shift(1)
-        selection = df_selection.apply(lambda row: best_t1 if row.isna().all() else row.idxmax(), axis=1)
-        sub_rets = df_pnl_adj.loc[start_d:end_d]
-        sub_sig = df_sig.loc[start_d:end_d]
-        sub_sel = selection.loc[start_d:end_d]
+        
+        # Option A: Filter out burn-in (approx 2015) for WFA
+        # Find first date with a valid parameter selection
+        valid_mask = df_selection.notna().any(axis=1)
+        if valid_mask.any():
+            wfa_first_date = df_selection.index[valid_mask][0]
+            effective_start = max(start_d, wfa_first_date)
+        else:
+            effective_start = start_d
+            
+        sub_rets = df_pnl_adj.loc[effective_start:end_d]
+        sub_sig = df_sig.loc[effective_start:end_d]
+        sub_sel = df_selection.loc[effective_start:end_d].idxmax(axis=1)
+        
         strat_rets = pd.Series([sub_rets.loc[d, int(t)] for d, t in sub_sel.items()], index=sub_rets.index)
         strat_signals = pd.Series([sub_sig.loc[d, int(t)] for d, t in sub_sel.items()], index=sub_sig.index)
         strat_name = tr('wfa_name')
 
-    # Benchmarks for Full period [A, C]
-    bench_rets_is = df_pnl_adj.loc[start_d:end_d, int(best_t1)]
+    # Benchmarks for display period [effective_start, end_d]
+    bench_rets_is = df_pnl_adj.loc[effective_start:end_d, int(best_t1)]
     
     # --- FOCUS: Out-of-Sample period (Inclusive of Split Date B) ---
     # Slice rets and signals starting EXACTLY from split_d

@@ -36,6 +36,7 @@ output/*.csv
 # Cache & Temp
 # ============================================================
 cache/
+scratch/
 .joblib/
 *.tmp
 
