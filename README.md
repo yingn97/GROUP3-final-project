@@ -144,8 +144,8 @@ The strategy calculates a **Consistency Index** ($R_T$) using 1-minute bars of t
 
 The raw 1-min stock data (~4.4GB) is required only if you wish to re-run the alpha pre-computation (Step 1). You can download it here:
 
-- **Link**: [Baidu Netdisk](https://pan.baidu.com/s/1W8LwoMDjvlmDLpoHwpL7kw?pwd=tbs7)
-- **Extraction Code**: `tbs7`
+- **Link**: [Baidu Netdisk](https://pan.baidu.com/s/1g630RZSzl2g1UYNhQTm9Dw?pwd=pejs)
+- **Extraction Code**: `pejs`
 - **Instructions**: Extract the `csi300_min_db` folder into the `data/` directory of this project.
 
 ### 1. Install Dependencies
