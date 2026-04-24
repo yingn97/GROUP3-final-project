@@ -180,9 +180,9 @@ streamlit run gui/app.py
 ```
 
 The dashboard provides three interactive tabs:
-- ** Overview** — KPI cards (Total Return, Sharpe, Max Drawdown, Win Rate) with equity & drawdown curves
-- ** Analysis** — Comprehensive metrics table, yearly performance breakdown (WFA Dynamic vs Static bar chart), and T-parameter adaptive path
-- ** Signals** — Price & signal overlay chart with simulated trade history table (entry price, direction, selected T, cumulative PnL)
+- **Overview** — KPI cards (Total Return, Sharpe, Max Drawdown, Win Rate) with equity & drawdown curves
+- **Analysis** — Comprehensive metrics table, yearly performance breakdown (WFA Dynamic vs Static bar chart), and T-parameter adaptive path
+- **Signals** — Price & signal overlay chart with simulated trade history table (entry price, direction, selected T, cumulative PnL)
 
 Use the sidebar sliders to adjust the backtest period, IS/OOS split point, and commission rate. Toggle between Static T (Manual) and Dynamic WFA (Adaptive) modes. Switch language via the top-right dropdown.
 
