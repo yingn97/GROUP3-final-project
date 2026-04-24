@@ -4,7 +4,7 @@
 [![Polars](https://img.shields.io/badge/Engine-Polars-CD792C.svg)](https://pola.rs/)
 [![Streamlit](https://img.shields.io/badge/GUI-Streamlit-FF4B4B.svg)](https://streamlit.io/)
 [![SQLite](https://img.shields.io/badge/DB-SQLite-003B57.svg)](https://www.sqlite.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 
 > **A production-grade, event-driven intraday CTA backtesting system** based on the "Constituent Consistency" strategy from academic research. The system quantifies market resonance via PCA on CSI-300 stocks' intraday returns and trades the IF index futures accordingly.
 
@@ -69,7 +69,6 @@
 ├── cache/                        # Joblib cache (auto-generated, git-ignored)
 ├── requirements.txt              # Python dependencies
 ├── .gitignore                    # Git exclusion rules
-├── LICENSE                       # MIT License
 └── README.md                     # Documentation (this file)
 ```
 
