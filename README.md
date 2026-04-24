@@ -1,4 +1,4 @@
-# 📈 MFE5210 Final Project: CTA Constituent Consistency Strategy
+#  MFE5210 Final Project: CTA Constituent Consistency Strategy
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Polars](https://img.shields.io/badge/Engine-Polars-CD792C.svg)](https://pola.rs/)
@@ -10,7 +10,7 @@
 
 ---
 
-## 🚀 Key Features
+##  Key Features
 
 | Capability | Description |
 |---|---|
@@ -24,7 +24,7 @@
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```text
 5210final project/
@@ -75,7 +75,7 @@
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -110,14 +110,14 @@
        ┌──────────────▼──────────────┐
        │   Streamlit GUI Dashboard   │
        │  (performance.py shared)    │
-       │  🎯 Overview │ 📊 Analysis │
-       │  🔬 Signals  │ 🌐 EN/CN   │
+       │   Overview │  Analysis │
+       │   Signals  │  EN/CN   │
        └─────────────────────────────┘
 ```
 
 ---
 
-## 🧠 Strategy Summary
+##  Strategy Summary
 
 The strategy calculates a **Consistency Index** ($R_T$) using 1-minute bars of the 300 CSI stocks from 09:30 up to $T$ minutes later:
 
@@ -130,7 +130,7 @@ The strategy calculates a **Consistency Index** ($R_T$) using 1-minute bars of t
 
 ---
 
-## 🛠️ Installation & Usage
+##  Installation & Usage
 
 ### Prerequisites
 
@@ -140,7 +140,7 @@ The strategy calculates a **Consistency Index** ($R_T$) using 1-minute bars of t
 > [!TIP]
 > **Quick Start**: This repository already includes pre-computed alpha and PnL matrices in the `data/` folder. You can skip the data download and run the **GUI Dashboard** (Step 3) immediately to see the full historical results.
 
-### 📦 Data Download (Full Dataset)
+###  Data Download (Full Dataset)
 
 The raw 1-min stock data (~4.4GB) is required only if you wish to re-run the alpha pre-computation (Step 1). You can download it here:
 
@@ -180,9 +180,9 @@ streamlit run gui/app.py
 ```
 
 The dashboard provides three interactive tabs:
-- **🎯 Overview** — KPI cards (Total Return, Sharpe, Max Drawdown, Win Rate) with equity & drawdown curves
-- **📊 Analysis** — Comprehensive metrics table, yearly performance breakdown (WFA Dynamic vs Static bar chart), and T-parameter adaptive path
-- **🔬 Signals** — Price & signal overlay chart with simulated trade history table (entry price, direction, selected T, cumulative PnL)
+- ** Overview** — KPI cards (Total Return, Sharpe, Max Drawdown, Win Rate) with equity & drawdown curves
+- ** Analysis** — Comprehensive metrics table, yearly performance breakdown (WFA Dynamic vs Static bar chart), and T-parameter adaptive path
+- ** Signals** — Price & signal overlay chart with simulated trade history table (entry price, direction, selected T, cumulative PnL)
 
 Use the sidebar sliders to adjust the backtest period, IS/OOS split point, and commission rate. Toggle between Static T (Manual) and Dynamic WFA (Adaptive) modes. Switch language via the top-right dropdown.
 
@@ -196,7 +196,7 @@ Reads the latest completed backtest run from the SQLite database and prints a pr
 
 ---
 
-## 📊 Design Patterns & Key Decisions
+##  Design Patterns & Key Decisions
 
 | Pattern | Where | Why |
 |---|---|---|
@@ -209,7 +209,7 @@ Reads the latest completed backtest run from the SQLite database and prints a pr
 
 ---
 
-## 📋 Experiment Protocol
+##  Experiment Protocol
 
 | Phase | Period | Purpose |
 |---|---|---|
@@ -218,11 +218,6 @@ Reads the latest completed backtest run from the SQLite database and prints a pr
 
 > The IS/OOS split is defined once in `src/config.py → EXPERIMENT_PROTOCOL` and propagated to all analysis scripts automatically.
 
----
-
-## 📄 License
-
-This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
